@@ -3,9 +3,9 @@ import re
 MESSAGE_REG = r'^(\d{4}-\d{2}-\d{2}), (\d{2} h \d{2}) - (.*?): (.*)'
 
 
-def parse_chat():
+def parse_chat(fileName):
     data = []
-    with open('chat.txt', 'r', encoding='utf-8') as f:
+    with open(fileName, 'r', encoding='utf-8') as f:
         for line in f:
             cleanLine = line.strip()
             if not cleanLine:
@@ -26,7 +26,7 @@ def parse_chat():
     return data
 
 if __name__ == "__main__":
-    chats = parse_chat()
+    chats = parse_chat('chat.txt')
     leaderboard = {}
     for i in chats:
         name = i['user']
