@@ -1,17 +1,32 @@
 import pandas as pd
 from parser import parse_chat
+from collections import defaultdict
+
+#This function creates an infinitely recursive dictionary so that we can add as many dates as we want.
+def nested_dict():
+    return defaultdict(nested_dict)
 
 def run_analysis():
     file_name = 'chat.txt'
     chats = parse_chat(file_name) #Use parse_chat to go through a file to make it a dictionary
     df = pd.DataFrame(chats) #Convert dictionary to dataframe (4 columns: date, time, user, text)
-    finalDataDict = {} #After all the work is done, results will be stored here to export into JSON for react
-    globalSubDict = {} #global sub dictionary for finalDataDict
-    finalDataDict['global'] = globalSubDict
-    globalNameSubDict = {} #name sub dictionary for global sub dictionary
-    globalSubDict['names'] = globalNameSubDict
-    
 
+    #This dictionary will be used to convert into json so that its easier to be used on react.
+    finalDataDict = {
+        "global": {
+            "total_message_volume": {},
+            "total_word_count": {},
+            "total_char_count": {},
+            "verbosity_ratio": {},
+            "golden_age": {},
+            "emoji_leaderboard": [],
+            "vocabulary_breadth": {},
+            "global_sentiment_mean": 0,
+            "global_response_latency_avg": "",
+            "global_hype_ratio": {}
+        },
+        "months": nested_dict()
+    }
 
 
     if df.empty:
@@ -25,23 +40,35 @@ def run_analysis():
     df['word_count'] = df['text'].str.split().str.len() #Convert text column strings to array split by whitespace and get the length to get number of words for every text
     df['question_count'] = df['text'].str.count(r'\?') #Count the number of question marks in each text
     df['exclamation_count'] = df['text'].str.count('!') #Count the number of exclamations in each text
+    df['char_count'] = df['text'].str.len() #Count the number of characters in each text
+
 
     # Aggregate per user global stats of message count, word count, question count, exclamation count
     user_stats = df.groupby('user').agg(
         messages=('user', 'count'),
         words=('word_count', 'sum'),
+        chars=('char_count', 'sum'),
         questions=('question_count', 'sum'),
         exclamations=('exclamation_count', 'sum')
     )
 
     #Global total messages
     for name, count in user_stats['messages'].items():
-        finalDataDict['global']['names']['msgCount'] = count
-    print(finalDataDict)
-    print("\nEngagement Ratio")
+        finalDataDict['global']['total_message_volume'][name] = count
+
+    #Global total words
+    for name, count in user_stats['words'].items():
+        finalDataDict['global']['total_word_count'][name] = count
+
+    #Global total chars
+    for name, count in user_stats['chars'].items():
+        finalDataDict['global']['total_char_count'][name] = count
+
+    #Global verbosity ratio
     engagement = user_stats['words'] / user_stats['messages']
     for name, ratio in engagement.items():
-        print(f'{name} : {ratio:.2f}')
+        finalDataDict['global']['verbosity_ratio'][name] = ratio
+
 
     print("\nHype meter (Questions, Exclamations)")
     for name, row in user_stats.iterrows():
