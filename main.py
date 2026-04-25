@@ -1,133 +1,77 @@
+import pandas as pd
 from parser import parse_chat
 
 def run_analysis():
     file_name = 'chat.txt'
-    chats = parse_chat(file_name)
+    chats = parse_chat(file_name) #Use parse_chat to go through a file to make it a dictionary
+    df = pd.DataFrame(chats) #Convert dictionary to dataframe (4 columns: date, time, user, text)
+    finalDataDict = {} #After all the work is done, results will be stored here to export into JSON for react
+    globalSubDict = {} #global sub dictionary for finalDataDict
+    finalDataDict['global'] = globalSubDict
+    globalNameSubDict = {} #name sub dictionary for global sub dictionary
+    globalSubDict['names'] = globalNameSubDict
+    
 
-    user_stats = {}
 
-    for chat in chats:
-        name = chat['user']
-        if name == "Mon amie La Rose":
-            name = "Sam Landry"
 
-        if name not in user_stats:
-            user_stats[name] = {
-                'messages': 0,
-                'words': 0,
-                'questions': 0,
-                'exclamations': 0
-            }
+    if df.empty:
+        print("No chat data found.")
+        return
 
-        stats = user_stats[name]
-        stats['messages'] += 1
+    # Normalize user names
+    df['user'] = df['user'].replace("Mon amie La Rose", "Sam Landry") 
 
-        line = chat['text']
-        stats['words'] += len(line.split())
+    # Extract metrics using pandas string operations
+    df['word_count'] = df['text'].str.split().str.len() #Convert text column strings to array split by whitespace and get the length to get number of words for every text
+    df['question_count'] = df['text'].str.count(r'\?') #Count the number of question marks in each text
+    df['exclamation_count'] = df['text'].str.count('!') #Count the number of exclamations in each text
 
-        stats['questions'] += line.count('?')
-        stats['exclamations'] += line.count('!')
+    # Aggregate per user global stats of message count, word count, question count, exclamation count
+    user_stats = df.groupby('user').agg(
+        messages=('user', 'count'),
+        words=('word_count', 'sum'),
+        questions=('question_count', 'sum'),
+        exclamations=('exclamation_count', 'sum')
+    )
 
-    print("Total Messages")
-    for name, stats in user_stats.items():
-        print(f'{name} : {stats["messages"]}')
-
+    #Global total messages
+    for name, count in user_stats['messages'].items():
+        finalDataDict['global']['names']['msgCount'] = count
+    print(finalDataDict)
     print("\nEngagement Ratio")
-    for name, stats in user_stats.items():
-        ratio = stats['words'] / stats['messages'] if stats['messages'] > 0 else 0
+    engagement = user_stats['words'] / user_stats['messages']
+    for name, ratio in engagement.items():
         print(f'{name} : {ratio:.2f}')
 
     print("\nHype meter (Questions, Exclamations)")
-    for name, stats in user_stats.items():
-        print(f"{name} : {stats['questions']}, {stats['exclamations']}")
+    for name, row in user_stats.iterrows():
+        print(f"{name} : {int(row['questions'])}, {int(row['exclamations'])}")
 
-    # Find the 3-month window with the most texts
-    from collections import defaultdict
-    from datetime import datetime
-    from dateutil.relativedelta import relativedelta
+    # Golden Age (3-month window)
+    df['date'] = pd.to_datetime(df['date'])
+    monthly = df.set_index('date').resample('ME').size()
+    
+    if not monthly.empty:
+        # Calculate a 3-month rolling sum of messages
+        rolling_3m = monthly.rolling(window=3).sum()
+        max_msgs = rolling_3m.max()
+        if pd.notna(max_msgs):
+            end_date = rolling_3m.idxmax()
+            start_date = end_date - pd.DateOffset(months=2)
+            print(f"\nGolden Age: {start_date.strftime('%Y-%m')} to {end_date.strftime('%Y-%m')} ({int(max_msgs)} messages)")
 
-    monthly_counts = defaultdict(int)
-    for chat in chats:
-        # Extract year and month (YYYY-MM)
-        month_key = chat['date'][:7]
-        monthly_counts[month_key] += 1
-
-    if monthly_counts:
-        # Get sorted list of all months present in the data
-        sorted_months = sorted(monthly_counts.keys())
-        start_date = datetime.strptime(sorted_months[0], "%Y-%m")
-        end_date = datetime.strptime(sorted_months[-1], "%Y-%m")
-
-        max_messages = -1
-        golden_age = (None, None)
-
-        current_window_start = start_date
-        while current_window_start <= end_date:
-            window_messages = 0
-            # Define the 3-month window
-            window_months = []
-            for i in range(3):
-                m = (current_window_start + relativedelta(months=i)).strftime("%Y-%m")
-                window_months.append(m)
-            
-            for m in window_months:
-                window_messages += monthly_counts.get(m, 0)
-
-            if window_messages > max_messages:
-                max_messages = window_messages
-                golden_age = (window_months[0], window_months[-1])
-            
-            current_window_start += relativedelta(months=1)
-
-        print(f"\nGolden Age: {golden_age[0]} to {golden_age[1]} ({max_messages} messages)")
-
-    # Find the 4-hour window with the most texts on average
-    # Windows: 00-04, 04-08, 08-12, 12-16, 16-20, 20-00
-    hourly_windows = {
-        "00:00 - 04:00": 0,
-        "04:00 - 08:00": 0,
-        "08:00 - 12:00": 0,
-        "12:00 - 16:00": 0,
-        "16:00 - 20:00": 0,
-        "20:00 - 00:00": 0
-    }
-
-    for chat in chats:
-        # Time format is "HH h MM" based on MESSAGE_REG
-        hour = int(chat['time'].split(' h ')[0])
-        
-        if 0 <= hour < 4:
-            hourly_windows["00:00 - 04:00"] += 1
-        elif 4 <= hour < 8:
-            hourly_windows["04:00 - 08:00"] += 1
-        elif 8 <= hour < 12:
-            hourly_windows["08:00 - 12:00"] += 1
-        elif 12 <= hour < 16:
-            hourly_windows["12:00 - 16:00"] += 1
-        elif 16 <= hour < 20:
-            hourly_windows["16:00 - 20:00"] += 1
-        else:
-            hourly_windows["20:00 - 00:00"] += 1
-
-    if hourly_windows:
-        most_active_window = max(hourly_windows, key=hourly_windows.get)
-        # Convert IST to MST (IST is UTC+5:30, MST is UTC-7:00)
-        # Difference is 12 hours and 30 minutes. 
-        # For simplicity in 4-hour blocks, we shift the window labels by -12.5 hours.
-        mst_windows = {}
-        for window, count in hourly_windows.items():
-            start_hour = int(window.split(':')[0])
-            # (start_hour - 12.5) % 24. We'll approximate to -12 for the block mapping.
-            mst_start = (start_hour - 12) % 24
-            mst_end = (mst_start + 4) % 24
-            mst_label = f"{mst_start:02d}:00 - {mst_end:02d}:00 (MST)"
-            mst_windows[mst_label] = count
-        
-        most_active_window = max(mst_windows, key=mst_windows.get)
-        hourly_windows = mst_windows # Update for the print statement
-
-        print(f"\nMost Active Time Window: {most_active_window} ({hourly_windows[most_active_window]} total messages)")
-
+    # Active Time Window Analysis (Approximating IST to MST shift of -12 hours)
+    df['hour_ist'] = df['time'].str.split(' h ').str[0].astype(int)
+    df['hour_mst'] = (df['hour_ist'] - 12) % 24
+    
+    bins = [0, 4, 8, 12, 16, 20, 24]
+    labels = ["00:00 - 04:00", "04:00 - 08:00", "08:00 - 12:00", "12:00 - 16:00", "16:00 - 20:00", "20:00 - 00:00"]
+    df['window'] = pd.cut(df['hour_mst'], bins=bins, labels=labels, right=False)
+    
+    window_counts = df['window'].value_counts()
+    if not window_counts.empty:
+        most_active = window_counts.idxmax()
+        print(f"\nMost Active Time Window: {most_active} (MST) ({window_counts.max()} total messages)")
 
 if __name__ == "__main__":
     run_analysis()
